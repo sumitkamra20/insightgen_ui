@@ -176,14 +176,8 @@ def headlines_ai_layout():
                 # Processing form section
                 html.Div(id="processing-form-container", style={"display": "none"}),
 
-                # Processing status section with circular progress
-                html.Div([
-                    html.H5("Processing Status", className="mt-4 mb-3"),
-                    html.Div([
-                        html.Div(id="circular-progress", className="circular-progress-container"),
-                        html.Div(id="status-text", className="mt-3")
-                    ], className="text-center")
-                ], id="processing-status-container", style={"display": "none"}),
+                # Keep an empty processing status container for callback references
+                html.Div(id="processing-status-container", style={"display": "none"}),
             ], width=7),
 
             # Right column: Inspection results and final results
@@ -669,8 +663,6 @@ Additional instructions: """,
     Output('job-id-store', 'data'),
     Output('job-status-interval', 'disabled'),
     Output('processing-status-container', 'style'),
-    Output('circular-progress', 'children'),
-    Output('status-text', 'children'),
     Output('results-container', 'children'),
     Output('process-button-text', 'children'),
     Output('process-spinner', 'className'),
@@ -713,19 +705,19 @@ def process_files(n_clicks, pptx_data, pdf_data, generator_id, user_prompt, cont
 
             # Handle specific validation errors
             if "Slide count mismatch" in error_detail:
-                return None, True, {"display": "none"}, None, None, dbc.Alert([
+                return None, True, {"display": "none"}, dbc.Alert([
                     html.I(className="fas fa-exclamation-triangle me-2"),
                     f"{error_detail}",
                     html.P("Please ensure both files have the same number of slides before proceeding.", className="mt-2")
                 ], color="danger"), "Generate Headlines", "ms-2 d-none"
             elif "Unsupported or corrupt" in error_detail or "Invalid or corrupt" in error_detail:
-                return None, True, {"display": "none"}, None, None, dbc.Alert([
+                return None, True, {"display": "none"}, dbc.Alert([
                     html.I(className="fas fa-exclamation-triangle me-2"),
                     f"{error_detail}",
                     html.P("Please check your files and try again with valid formats.", className="mt-2")
                 ], color="danger"), "Generate Headlines", "ms-2 d-none"
             else:
-                return None, True, {"display": "none"}, None, None, dbc.Alert([
+                return None, True, {"display": "none"}, dbc.Alert([
                     html.I(className="fas fa-exclamation-triangle me-2"),
                     f"Error: {error_detail}"
                 ], color="danger"), "Generate Headlines", "ms-2 d-none"
@@ -745,32 +737,23 @@ def process_files(n_clicks, pptx_data, pdf_data, generator_id, user_prompt, cont
                         html.P("Processing will continue, but please consider using matching filenames in the future.", className="mt-2")
                     ], color="warning"))
 
-        # Initial circular progress
-        circular_progress = html.Div([
-            html.Div("5%", className="circular-progress-value"),
-            html.Div(className="circular-progress-circle", style={"background": "conic-gradient(var(--bs-primary) 5%, #e9ecef 0%)"})
-        ])
+        # Initial button text with status
+        process_button_text = "Processing (5%) - Slide processing..."
 
-        # Initial status
-        status_text = html.Div([
-            html.H6("Stage 1/4", className="mb-1"),
-            html.P("Slide processing - Preparing slides for analysis...", className="small text-muted")
-        ])
-
-        return job_id, False, {"display": "block"}, circular_progress, status_text, html.Div(warnings_display), "Processing...", "ms-2 d-inline-block"
+        return job_id, False, {"display": "none"}, html.Div(warnings_display), process_button_text, "ms-2 d-inline-block"
 
     except requests.RequestException as e:
-        return None, True, {"display": "none"}, None, None, dbc.Alert(f"Error connecting to API: {str(e)}", color="danger"), "Generate Headlines", "ms-2 d-none"
+        return None, True, {"display": "none"}, dbc.Alert(f"Error connecting to API: {str(e)}", color="danger"), "Generate Headlines", "ms-2 d-none"
     except Exception as e:
-        return None, True, {"display": "none"}, None, None, dbc.Alert(f"Error: {str(e)}", color="danger"), "Generate Headlines", "ms-2 d-none"
+        return None, True, {"display": "none"}, dbc.Alert(f"Error: {str(e)}", color="danger"), "Generate Headlines", "ms-2 d-none"
 
 # Callback to update job status
 @callback(
-    Output('circular-progress', 'children', allow_duplicate=True),
-    Output('status-text', 'children', allow_duplicate=True),
     Output('processing-completed', 'data'),
     Output('processing-status-container', 'style', allow_duplicate=True),
     Output('results-container', 'children', allow_duplicate=True),
+    Output('process-button-text', 'children', allow_duplicate=True),
+    Output('process-spinner', 'className', allow_duplicate=True),
     Input('job-status-interval', 'n_intervals'),
     State('job-id-store', 'data'),
     State('processing-completed', 'data'),
@@ -869,35 +852,19 @@ def update_job_status(n_intervals, job_id, completed):
                     ])
                 ])
 
-                # Final circular progress
-                circular_progress = html.Div([
-                    html.Div("100%", className="circular-progress-value"),
-                    html.Div(className="circular-progress-circle", style={"background": "conic-gradient(var(--bs-success) 100%, #e9ecef 0%)"})
-                ])
-
-                # Final status text
-                status_text = html.Div([
-                    html.H6("Completed", className="mb-1 text-success"),
-                    html.P("All processing stages finished successfully", className="small text-muted")
-                ])
+                # Reset the process button
+                process_button_text = "Generate Headlines"
+                process_spinner_class = "ms-2 d-none"
 
                 # Hide the progress container when completed
-                return circular_progress, status_text, True, {"display": "none"}, new_results
+                return True, {"display": "none"}, new_results, process_button_text, process_spinner_class
 
             elif status == "failed":
-                # Failed circular progress
-                circular_progress = html.Div([
-                    html.Div("Failed", className="circular-progress-value text-danger"),
-                    html.Div(className="circular-progress-circle", style={"background": "conic-gradient(var(--bs-danger) 100%, #e9ecef 0%)"})
-                ])
+                # Reset the process button
+                process_button_text = "Generate Headlines"
+                process_spinner_class = "ms-2 d-none"
 
-                # Failed status text
-                status_text = html.Div([
-                    html.H6("Error", className="mb-1 text-danger"),
-                    html.P(job_status.get('message', 'Unknown error'), className="small text-muted")
-                ])
-
-                return circular_progress, status_text, True, {"display": "none"}, dbc.Alert(f"Processing failed: {job_status.get('message', 'Unknown error')}", color="danger")
+                return True, {"display": "none"}, dbc.Alert(f"Processing failed: {job_status.get('message', 'Unknown error')}", color="danger"), process_button_text, process_spinner_class
 
             else:  # processing
                 # Calculate progress based on elapsed time
@@ -907,43 +874,30 @@ def update_job_status(n_intervals, job_id, completed):
                 if elapsed_time <= 5:
                     # Stage 1: 5% to 20%
                     progress_value = min(5 + (elapsed_time / 5) * 15, 20)
-                    stage_text = "Stage 1/4"
-                    detail_text = "Slide processing - Preparing slides for analysis..."
+                    detail_text = "Slide processing..."
                 elif elapsed_time <= 30:
                     # Stage 2: 20% to 80%
                     progress_value = min(20 + ((elapsed_time - 5) / 25) * 60, 80)
-                    stage_text = "Stage 2/4"
-                    detail_text = "Generating observations - Analyzing slide content..."
+                    detail_text = "Generating observations..."
                 elif elapsed_time <= 45:
                     # Stage 3: 80% to 95%
                     progress_value = min(80 + ((elapsed_time - 30) / 15) * 15, 95)
-                    stage_text = "Stage 3/4"
-                    detail_text = "Generating headlines - Creating impactful headlines..."
+                    detail_text = "Generating headlines..."
                 else:
                     # Stage 4: 95% to 99%
                     progress_value = min(95 + ((elapsed_time - 45) / 15) * 4, 99)
-                    stage_text = "Stage 4/4"
-                    detail_text = "Updating presentation - Inserting headlines into slides..."
+                    detail_text = "Updating presentation..."
 
-                # Update circular progress
-                circular_progress = html.Div([
-                    html.Div(f"{int(progress_value)}%", className="circular-progress-value"),
-                    html.Div(className="circular-progress-circle", style={"background": f"conic-gradient(var(--bs-primary) {progress_value}%, #e9ecef 0%)"})
-                ])
+                # Update button text with progress and status
+                process_button_text = f"Processing ({int(progress_value)}%) - {detail_text}"
 
-                # Update status text
-                status_text = html.Div([
-                    html.H6(stage_text, className="mb-1"),
-                    html.P(detail_text, className="small text-muted")
-                ])
+                return False, {"display": "none"}, dash.no_update, process_button_text, "ms-2 d-inline-block"
 
-                return circular_progress, status_text, False, {"display": "block"}, dash.no_update
-
-        return dash.no_update, dash.no_update, False, dash.no_update, dash.no_update
+        return False, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     except Exception as e:
         print(f"Error polling job status: {str(e)}")
-        return dash.no_update, dash.no_update, False, dash.no_update, dash.no_update
+        return False, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
 ################################################################################
 # OPTIONAL: ABOUT PAGE CALLBACKS
