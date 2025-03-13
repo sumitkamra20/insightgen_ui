@@ -1,0 +1,207 @@
+/* Custom styles for InsightGen UI */
+
+/* Sidebar styling */
+.sidebar {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    background-color: #f8f9fa;
+}
+
+.sidebar-header {
+    border-bottom: 1px solid #e9ecef;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+}
+
+.sidebar-logo {
+    height: 30px;
+    width: 30px;
+    margin-right: 10px;
+    object-fit: contain;
+}
+
+/* App title styling */
+.app-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #d53f8c;
+    margin: 0;
+}
+
+/* Navigation link styling */
+.nav-link {
+    color: #495057;
+    border-radius: 4px;
+    margin-bottom: 5px;
+    transition: all 0.2s ease;
+}
+
+.nav-link:hover {
+    background-color: #e9ecef;
+    color: #212529;
+}
+
+/* Active link styling - similar to the image */
+.nav-link.active {
+    background-color: #d53f8c !important;
+    color: white !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+/* Icon styling */
+.nav-link i {
+    width: 20px;
+    text-align: center;
+    margin-right: 8px;
+}
+
+/* Main content area */
+.content-area {
+    padding: 20px;
+    background-color: #ffffff;
+}
+
+/* Card styling */
+.card {
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    margin-bottom: 20px;
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    font-weight: 600;
+}
+
+/* Button styling */
+.btn-primary {
+    background-color: #d53f8c;
+    border-color: #d53f8c;
+}
+
+.btn-primary:hover {
+    background-color: #b83280;
+    border-color: #b83280;
+}
+
+.btn-success {
+    background-color: #38a169;
+    border-color: #38a169;
+}
+
+.btn-success:hover {
+    background-color: #2f855a;
+    border-color: #2f855a;
+}
+
+/* Custom spinner */
+#inspect-spinner.d-inline-block,
+#process-spinner.d-inline-block {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 0.15em solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spinner-border .75s linear infinite;
+    vertical-align: middle;
+}
+
+@keyframes spinner-border {
+    to { transform: rotate(360deg); }
+}
+
+/* Circular progress bar */
+.circular-progress-container {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.circular-progress-circle {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: conic-gradient(var(--bs-primary) 0%, #e9ecef 0%);
+}
+
+.circular-progress-circle::before {
+    content: '';
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    background: white;
+    border-radius: 50%;
+}
+
+.circular-progress-value {
+    position: relative;
+    font-size: 1.5rem;
+    font-weight: bold;
+    z-index: 1;
+}
+
+/* File upload styling */
+.dcc-upload-active {
+    border-color: var(--bs-primary) !important;
+    background-color: rgba(213, 63, 140, 0.05);
+}
+
+/* Table styling for inspection results */
+table td {
+    padding: 4px 0;
+}
+
+/* Reduce font sizes for better readability */
+.lead {
+    font-size: 1.1rem;
+}
+
+h1 {
+    font-size: 2.2rem;
+}
+
+h2 {
+    font-size: 1.8rem;
+}
+
+h3 {
+    font-size: 1.5rem;
+}
+
+h4 {
+    font-size: 1.3rem;
+}
+
+h5 {
+    font-size: 1.1rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 992px) {
+    .sidebar {
+        width: 100%;
+        height: auto;
+    }
+
+    .sidebar-header {
+        justify-content: center;
+    }
+
+    .nav {
+        flex-direction: row !important;
+        justify-content: center;
+    }
+
+    .nav-link {
+        margin: 0 5px;
+    }
+}
