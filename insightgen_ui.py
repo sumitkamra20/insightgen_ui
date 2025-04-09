@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import tempfile
 from dotenv import load_dotenv
-from params import DEFAULT_FEW_SHOT_EXAMPLES
 
 # Load environment variables
 load_dotenv()
@@ -53,6 +52,12 @@ if 'inspection_done' not in st.session_state:
     st.session_state.inspection_done = False
 if 'inspection_results' not in st.session_state:
     st.session_state.inspection_results = None
+if 'selected_generator_id' not in st.session_state:
+    st.session_state.selected_generator_id = ""
+if 'current_prompt' not in st.session_state:
+    st.session_state.current_prompt = ""
+if 'generators_cache' not in st.session_state:
+    st.session_state.generators_cache = []
 
 # File upload section
 with st.form("upload_form", clear_on_submit=False):
@@ -66,6 +71,26 @@ with st.form("upload_form", clear_on_submit=False):
 
     # Only show the inspect button if both files are uploaded
     inspect_button = st.form_submit_button("Submit")
+
+# Function to update generator selection when changed
+def update_generator_selection():
+    generator_name = st.session_state.generator_selector
+    generator_id = generator_options[generator_name]
+
+    # Update the generator ID in session state
+    st.session_state.selected_generator_id = generator_id
+
+    # Update the prompt text for the selected generator
+    if generator_id:
+        # Use generators from cache if available
+        generators_list = st.session_state.generators_cache
+
+        # Find the selected generator in the list
+        for generator in generators_list:
+            if generator["id"] == generator_id:
+                # Set the example prompt from the generator
+                st.session_state.current_prompt = generator.get("example_prompt", "")
+                break
 
 if inspect_button and pptx_file and pdf_file:
     with st.spinner("Inspecting files..."):
@@ -140,32 +165,42 @@ if st.session_state.inspection_done and st.session_state.inspection_results:
 
 # Processing form - only show if inspection is done and valid
 if st.session_state.inspection_done and st.session_state.inspection_results and st.session_state.inspection_results["is_valid"]:
+    st.subheader("Generate Insights")
+
+    # Fetch available generators
+    generators = fetch_generators()
+
+    # Update generators cache
+    if generators:
+        st.session_state.generators_cache = generators
+
+    # Create generator selection dropdown with "Select" as first option
+    generator_options = {"Select a generator": ""} if generators else {"Brand Growth Study (Default)": "bgs_default"}
+    if generators:
+        generator_options.update({g["name"]: g["id"] for g in generators})
+
+    generator_names = list(generator_options.keys())
+
+    # Add generator selector OUTSIDE the form
+    st.selectbox(
+        "Select Generator",
+        options=generator_names,
+        index=0,
+        help="Choose the type of analysis to perform",
+        key="generator_selector",
+        on_change=update_generator_selection
+    )
+
+    # Show the current selection status
+    is_generator_selected = st.session_state.selected_generator_id != ""
+    if not is_generator_selected:
+        st.info("Please select a generator to enable submission.")
+
+    # Now create the form without the generator selector
     with st.form("processing_form"):
-        st.subheader("Generate Insights")
-
-        # Fetch available generators
-        generators = fetch_generators()
-
-        # Create generator selection dropdown
-        generator_options = {g["name"]: g["id"] for g in generators} if generators else {"Brand Growth Study (Default)": "bgs_default"}
-        generator_names = list(generator_options.keys())
-
-        selected_generator_name = st.selectbox(
-            "Select Generator",
-            options=generator_names,
-            index=0,
-            help="Choose the type of analysis to perform"
-        )
-
-        # Get the selected generator ID
-        selected_generator_id = generator_options[selected_generator_name]
-
         user_prompt = st.text_area(
             "Prompt: Market, Brand Context and Additional Instructions",
-            """Market: Vietnam;
-Client brands: Heineken, Tiger, Bia Viet, Larue, Bivina;
-Competitors: 333, Saigon Beer, Hanoi Beer;
-Additional instructions: """,
+            st.session_state.current_prompt,  # Use the prompt from session state
             height=130,
         )
 
@@ -177,14 +212,8 @@ Additional instructions: """,
             help="Number of previous slides to maintain in context"
         )
 
-        few_shot_examples = st.text_area(
-            "Custom Examples - Edit or add more examples (Optional)",
-            f'{DEFAULT_FEW_SHOT_EXAMPLES}',
-            height=150,
-            help="Provide custom examples to guide the headline generation"
-        )
-
-        submit_button = st.form_submit_button("Submit")
+        # Use the session state to determine if the button should be disabled
+        submit_button = st.form_submit_button("Submit", disabled=not is_generator_selected)
 
     if submit_button:
         with st.spinner("Uploading files and starting processing..."):
@@ -197,11 +226,8 @@ Additional instructions: """,
             data = {
                 "user_prompt": user_prompt,
                 "context_window_size": str(context_window_size),
-                "generator_id": selected_generator_id,  # Add the selected generator ID
+                "generator_id": st.session_state.selected_generator_id,  # Use the generator ID from session state
             }
-
-            if few_shot_examples:
-                data["few_shot_examples"] = few_shot_examples
 
             # Submit job
             try:
