@@ -5,3 +5,6 @@ __pycache__/
 .env
 # Virtual environments
 venv/
+xx_insightgen_ui_backup.py
+
+assets/

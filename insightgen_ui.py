@@ -14,15 +14,133 @@ load_dotenv()
 # In production: use the Cloud Run URL
 # Set DEPLOYMENT_ENV=production in your Streamlit Cloud environment variables
 is_production = os.getenv("DEPLOYMENT_ENV") == "production"
-API_URL = os.getenv("API_URL", "https://insightgen-api-195411721870.us-central1.run.app" if is_production else "http://localhost:8080")
+API_URL = os.getenv('GCP_API_URL', "https://insightgen-api-195411721870.us-central1.run.app") if is_production else "http://localhost:8080"
 
 # Log the API URL being used (helpful for debugging)
 print(f"Using API URL: {API_URL}")
 
+# Authentication functions
+def login(username, password):
+    """Authenticate user with the backend API"""
+    try:
+        response = requests.post(
+            f"{API_URL}/api/auth/login",
+            json={"username": username, "password": password}
+        )
+
+        if response.status_code == 200:
+            # Store auth token and user info in session state
+            data = response.json()
+            st.session_state.auth_token = data.get("access_token")
+            st.session_state.user = data.get("user", {})
+            st.session_state.is_authenticated = True
+
+            # Also store auth token in cookie
+            headers = response.headers
+            if "set-cookie" in headers:
+                cookie = headers["set-cookie"].split(";")[0].split("=")[1]
+                st.session_state.auth_cookie = cookie
+
+            return True, "Login successful"
+        else:
+            error_msg = "Login failed"
+            if response.status_code == 401:
+                error_msg = "Invalid username or password"
+            elif response.status_code == 403:
+                error_msg = "Access denied"
+            return False, error_msg
+    except Exception as e:
+        return False, f"Error connecting to the server: {str(e)}"
+
+def register(username, password, full_name, email, company="", designation=""):
+    """Register a new user with the backend API"""
+    try:
+        # Prepare registration data
+        registration_data = {
+            "username": username,
+            "password": password,
+            "full_name": full_name,
+            "email": email,
+            "company": company,
+            "designation": designation
+        }
+
+        # Call the registration API
+        response = requests.post(
+            f"{API_URL}/api/auth/register",
+            json=registration_data
+        )
+
+        # Handle the response
+        if response.status_code == 200:
+            # Registration successful - but don't automatically log in
+            return True, "Registration successful"
+        else:
+            # Registration failed - parse error details
+            error_data = response.json()
+            error_msg = error_data.get("detail", {}).get("message", "Registration failed")
+            error_details = error_data.get("detail", {}).get("errors", [])
+
+            if error_details:
+                error_msg += ": " + " ".join(error_details)
+
+            return False, error_msg
+    except Exception as e:
+        return False, f"Error connecting to the server: {str(e)}"
+
+def verify_auth():
+    """Verify if current authentication is valid"""
+    # Skip if we know we're not authenticated
+    if not st.session_state.get("is_authenticated", False):
+        return False
+
+    # Get auth token from session state
+    token = st.session_state.get("auth_token")
+    if not token:
+        return False
+
+    try:
+        # Call verify endpoint
+        response = requests.get(
+            f"{API_URL}/api/auth/verify",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("authenticated", False):
+                # Update user info in session
+                if "user" in data:
+                    st.session_state.user = data["user"]
+                return True
+
+        # If we get here, authentication failed
+        logout()
+        return False
+    except Exception as e:
+        print(f"Auth verification error: {str(e)}")
+        return False
+
+def logout():
+    """Clear authentication data"""
+    if "auth_token" in st.session_state:
+        del st.session_state.auth_token
+    if "user" in st.session_state:
+        del st.session_state.user
+    if "is_authenticated" in st.session_state:
+        del st.session_state.is_authenticated
+    if "auth_cookie" in st.session_state:
+        del st.session_state.auth_cookie
+
 # Function to fetch available generators
 def fetch_generators():
     try:
-        response = requests.get(f"{API_URL}/generators/")
+        # Include auth token if available
+        headers = {}
+        if "auth_token" in st.session_state:
+            headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+
+        response = requests.get(f"{API_URL}/generators/", headers=headers)
         if response.status_code == 200:
             # Extract the generators list from the response
             response_data = response.json()
@@ -34,18 +152,28 @@ def fetch_generators():
         st.error(f"Error fetching generators: {str(e)}")
         return []
 
+# Page configuration
 st.set_page_config(
     page_title="InsightGen",
     page_icon="📊",
     layout="wide",
 )
 
-st.title("InsightGen: AI-Powered Insights")
-st.markdown("""
-Generate insightful headlines for your market research presentations.
-Currently supporting BGS studies only.
-Upload your PPTX and PDF files, provide some context, and let AI do the rest!
-""")
+# Initialize session state variables
+if "is_authenticated" not in st.session_state:
+    st.session_state.is_authenticated = False
+
+# Add registration session state variables
+if "registration_successful" not in st.session_state:
+    st.session_state.registration_successful = False
+if "registered_username" not in st.session_state:
+    st.session_state.registered_username = ""
+if "registered_full_name" not in st.session_state:
+    st.session_state.registered_full_name = ""
+if "show_welcome_dialog" not in st.session_state:
+    st.session_state.show_welcome_dialog = False
+if "clear_registration_form" not in st.session_state:
+    st.session_state.clear_registration_form = False
 
 # Create a session state to track the inspection status
 if 'inspection_done' not in st.session_state:
@@ -58,6 +186,177 @@ if 'current_prompt' not in st.session_state:
     st.session_state.current_prompt = ""
 if 'generators_cache' not in st.session_state:
     st.session_state.generators_cache = []
+# Add new session state variables for job completion and metrics
+if 'job_completed' not in st.session_state:
+    st.session_state.job_completed = False
+if 'job_id' not in st.session_state:
+    st.session_state.job_id = None
+if 'job_metrics' not in st.session_state:
+    st.session_state.job_metrics = None
+if 'output_filename' not in st.session_state:
+    st.session_state.output_filename = None
+
+# Header area with title and user info
+col1, col2 = st.columns([3, 1])
+with col1:
+    st.title("InsightGen: AI-Powered Insights")
+with col2:
+    # Show user info or login button based on authentication
+    if st.session_state.is_authenticated:
+        user_info = st.session_state.user
+        st.markdown(f"**Logged in as:** {user_info.get('full_name', 'User')}")
+
+        # Add logout button
+        if st.button("Logout"):
+            # Call logout endpoint
+            try:
+                response = requests.post(f"{API_URL}/api/auth/logout")
+                logout()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error during logout: {str(e)}")
+                logout()  # Still clear local state
+                st.rerun()
+    else:
+        st.text("Not logged in")
+
+# Verify authentication on page load
+if st.session_state.is_authenticated:
+    # Verify token is still valid
+    is_valid = verify_auth()
+    if not is_valid:
+        st.warning("Your session has expired. Please login again.")
+        # Force rerun to show login form
+        st.session_state.is_authenticated = False
+        st.rerun()
+
+# Login form if not authenticated
+if not st.session_state.is_authenticated:
+    st.markdown("## Login to continue")
+    st.markdown("Please login with your InsightGen credentials.")
+
+    # Create tabs for Login and Register
+    login_tab, register_tab = st.tabs(["Login", "Register"])
+
+    # Login tab
+    with login_tab:
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+
+            submit_button = st.form_submit_button("Login")
+
+            if submit_button:
+                success, message = login(username, password)
+                if success:
+                    st.success("Login successful!")
+                    # Rerun app to update UI
+                    st.rerun()
+                else:
+                    st.error(message)
+
+    # Registration tab
+    with register_tab:
+        # Check if we should show welcome dialog
+        if st.session_state.show_welcome_dialog:
+            # Welcome dialog
+            st.success(f"Account created successfully!")
+            st.markdown(f"### Welcome {st.session_state.registered_full_name}!")
+            st.markdown("Your account has been created. Click OK to proceed to login.")
+
+            if st.button("OK"):
+                # Reset welcome dialog flag
+                st.session_state.show_welcome_dialog = False
+                # Reset clear form flag
+                st.session_state.clear_registration_form = False
+                # Switch to login tab and show message
+                st.session_state.registration_successful = True
+                st.rerun()
+        else:
+            with st.form("register_form"):
+                st.markdown("Create a new account")
+
+                # Initialize form fields (empty if clear_registration_form is True)
+                default_username = "" if st.session_state.clear_registration_form else st.session_state.get("form_username", "")
+                default_password = "" if st.session_state.clear_registration_form else st.session_state.get("form_password", "")
+                default_password_confirm = "" if st.session_state.clear_registration_form else st.session_state.get("form_password_confirm", "")
+                default_full_name = "" if st.session_state.clear_registration_form else st.session_state.get("form_full_name", "")
+                default_email = "" if st.session_state.clear_registration_form else st.session_state.get("form_email", "")
+                default_company = "" if st.session_state.clear_registration_form else st.session_state.get("form_company", "")
+                default_designation = "" if st.session_state.clear_registration_form else st.session_state.get("form_designation", "")
+
+                # Reset clear form flag
+                if st.session_state.clear_registration_form:
+                    st.session_state.clear_registration_form = False
+
+                reg_username = st.text_input("Username (3-20 characters, letters, numbers, underscore)", value=default_username, key="form_username")
+                reg_password = st.text_input("Password", type="password",
+                                             help="Min 8 chars, include uppercase, lowercase, and digits",
+                                             value=default_password, key="form_password")
+                reg_password_confirm = st.text_input("Confirm Password", type="password",
+                                                    value=default_password_confirm, key="form_password_confirm")
+                reg_full_name = st.text_input("Full Name", value=default_full_name, key="form_full_name")
+                reg_email = st.text_input("Email Address", value=default_email, key="form_email")
+
+                # Optional fields
+                with st.expander("Additional Information (Optional)"):
+                    reg_company = st.text_input("Company", value=default_company, key="form_company")
+                    reg_designation = st.text_input("Designation", value=default_designation, key="form_designation")
+
+                register_button = st.form_submit_button("Register")
+
+                if register_button:
+                    # Client-side validation
+                    validation_errors = []
+
+                    # Check if passwords match
+                    if reg_password != reg_password_confirm:
+                        validation_errors.append("Passwords do not match")
+
+                    # Display validation errors if any
+                    if validation_errors:
+                        for error in validation_errors:
+                            st.error(error)
+                    else:
+                        # Submit registration
+                        success, message = register(
+                            username=reg_username,
+                            password=reg_password,
+                            full_name=reg_full_name,
+                            email=reg_email,
+                            company=reg_company,
+                            designation=reg_designation
+                        )
+
+                        if success:
+                            # Store registration info for welcome dialog
+                            st.session_state.registered_username = reg_username
+                            st.session_state.registered_full_name = reg_full_name
+                            # Set flag to show welcome dialog
+                            st.session_state.show_welcome_dialog = True
+                            # Set flag to clear form on next render
+                            st.session_state.clear_registration_form = True
+                            # Rerun app to show welcome dialog
+                            st.rerun()
+                        else:
+                            st.error(message)
+
+    # Handle tab switching after registration
+    if st.session_state.get('registration_successful', False):
+        # Clear the flag so it only happens once
+        st.session_state.registration_successful = False
+        # Display a message in the login tab
+        st.info(f"Please login with your new account: {st.session_state.get('registered_username', '')}")
+
+    # Stop here if not authenticated
+    st.stop()
+
+# Main app content - only shown if authenticated
+st.markdown("""
+Generate insightful headlines for your market research presentations.
+Currently supporting BGS studies only.
+Upload your PPTX and PDF files, provide some context, and let AI do the rest!
+""")
 
 # File upload section
 with st.form("upload_form", clear_on_submit=False):
@@ -100,14 +399,26 @@ if inspect_button and pptx_file and pdf_file:
             "pdf_file": (pdf_file.name, pdf_file.getvalue(), "application/pdf"),
         }
 
+        # Include auth token in headers
+        headers = {}
+        if "auth_token" in st.session_state:
+            headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+
         try:
             # Call the inspect-files endpoint
-            response = requests.post(f"{API_URL}/inspect-files/", files=files)
+            response = requests.post(f"{API_URL}/inspect-files/", files=files, headers=headers)
 
             # Check for HTTP errors
             if response.status_code >= 400:
                 error_detail = response.json().get("detail", "Unknown error")
                 st.error(f"❌ Error during inspection: {error_detail}")
+
+                # Handle authentication errors specifically
+                if response.status_code == 401:
+                    logout()
+                    st.error("Your session has expired. Please login again.")
+                    st.rerun()
+
                 st.stop()
 
             # Process successful response
@@ -217,6 +528,12 @@ if st.session_state.inspection_done and st.session_state.inspection_results and 
 
     if submit_button:
         with st.spinner("Uploading files and starting processing..."):
+            # Reset job completion state for new submissions
+            st.session_state.job_completed = False
+            st.session_state.job_id = None
+            st.session_state.job_metrics = None
+            st.session_state.output_filename = None
+
             # Prepare form data
             files = {
                 "pptx_file": (pptx_file.name, pptx_file.getvalue(), "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
@@ -231,7 +548,12 @@ if st.session_state.inspection_done and st.session_state.inspection_results and 
 
             # Submit job
             try:
-                response = requests.post(f"{API_URL}/upload-and-process/", files=files, data=data)
+                # Include auth token in headers
+                headers = {}
+                if "auth_token" in st.session_state:
+                    headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+
+                response = requests.post(f"{API_URL}/upload-and-process/", files=files, data=data, headers=headers)
 
                 # Check for HTTP errors (4xx, 5xx)
                 if response.status_code >= 400:
@@ -256,6 +578,7 @@ if st.session_state.inspection_done and st.session_state.inspection_results and 
                 # Process successful response
                 response_data = response.json()
                 job_id = response_data["job_id"]
+                st.session_state.job_id = job_id  # Store job ID in session state
 
                 # Display any warnings
                 if "warnings" in response_data and response_data["warnings"]:
@@ -282,7 +605,12 @@ if st.session_state.inspection_done and st.session_state.inspection_results and 
                 processing_stage = 1
 
                 while not completed and time.time() - start_time < 3600:  # 1 hour timeout
-                    status_response = requests.get(f"{API_URL}/job-status/{job_id}")
+                    # Include auth token in headers for status check
+                    headers = {}
+                    if "auth_token" in st.session_state:
+                        headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+
+                    status_response = requests.get(f"{API_URL}/job-status/{job_id}", headers=headers)
 
                     if status_response.status_code == 200:
                         job_status = status_response.json()
@@ -297,34 +625,18 @@ if st.session_state.inspection_done and st.session_state.inspection_results and 
 
                         if status == "completed":
                             progress_bar.progress(100)
-                            status_text.success("Processing completed successfully!")
+                            status_text.empty()  # Clear the status text instead
 
-                            # Display metrics
+                            # Store completion status and output filename in session state
+                            st.session_state.job_completed = True
+                            st.session_state.output_filename = job_status.get("output_filename", f"processed_{pptx_file.name}")
+
+                            # Store metrics in session state
                             if "metrics" in job_status and job_status["metrics"]:
-                                metrics = job_status["metrics"]
+                                st.session_state.job_metrics = job_status["metrics"]
 
-                                st.subheader("Performance Metrics")
-                                col1, col2 = st.columns(2)
-
-                                with col1:
-                                    st.metric("Total Slides", metrics.get("total_slides", 0))
-                                    st.metric("Content Slides Processed", metrics.get("content_slides_processed", 0))
-                                    st.metric("Observations Generated", metrics.get("observations_generated", 0))
-                                    st.metric("Headlines Generated", metrics.get("headlines_generated", 0))
-
-                                with col2:
-                                    st.metric("Errors", metrics.get("errors", 0))
-                                    st.metric("Total Processing Time (s)", round(metrics.get("total_time_seconds", 0), 2))
-                                    st.metric("Avg. Time per Slide (s)", round(metrics.get("average_time_per_content_slide", 0), 2))
-
-                            # Download button
-                            st.download_button(
-                                "Download Processed Presentation",
-                                requests.get(f"{API_URL}/download/{job_id}").content,
-                                file_name=job_status.get("output_filename", f"processed_{pptx_file.name}"),
-                                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                            )
-
+                            # We'll now let the persistent section at the bottom display the metrics
+                            # This prevents duplicate display of metrics and download button
                             completed = True
 
                         elif status == "failed":
@@ -386,6 +698,40 @@ if st.session_state.inspection_done and st.session_state.inspection_results and 
                 st.error(f"Error connecting to API: {str(e)}")
             except Exception as e:
                 st.error(f"Error: {str(e)}")
+
+# Check if we have completed a job and need to display results
+if st.session_state.job_completed and st.session_state.job_id and st.session_state.job_metrics:
+    # Display a success message
+    st.success("Processing completed successfully!")
+
+    # Display metrics from session state
+    metrics = st.session_state.job_metrics
+    st.subheader("Performance Metrics")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric("Total Slides", metrics.get("total_slides", 0))
+        st.metric("Content Slides Processed", metrics.get("content_slides_processed", 0))
+        st.metric("Observations Generated", metrics.get("observations_generated", 0))
+        st.metric("Headlines Generated", metrics.get("headlines_generated", 0))
+
+    with col2:
+        st.metric("Errors", metrics.get("errors", 0))
+        st.metric("Total Processing Time (s)", round(metrics.get("total_time_seconds", 0), 2))
+        st.metric("Avg. Time per Slide (s)", round(metrics.get("average_time_per_content_slide", 0), 2))
+
+    # Download button with auth header
+    headers = {}
+    if "auth_token" in st.session_state:
+        headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+
+    st.download_button(
+        "Download Processed Presentation",
+        requests.get(f"{API_URL}/download/{st.session_state.job_id}", headers=headers).content,
+        file_name=st.session_state.output_filename,
+        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        key="download_button_persistent"
+    )
 
 # Add sidebar with additional information
 with st.sidebar:
