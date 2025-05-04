@@ -107,10 +107,10 @@ def headlines_ai_layout():
         dbc.Row([
             # Left column: File upload and processing
             dbc.Col([
-                # File upload section
-                dbc.Card([
-                    dbc.CardHeader("Upload Files"),
-                    dbc.CardBody([
+        # File upload section
+        dbc.Card([
+            dbc.CardHeader("Upload Files"),
+            dbc.CardBody([
                         # PPTX upload
                         html.P("Upload PPTX file", className="mb-1 small"),
                         dcc.Upload(
@@ -170,8 +170,8 @@ def headlines_ai_layout():
                                 n_clicks=0
                             )
                         ], className="text-center")
-                    ])
-                ], className="mb-4"),
+            ])
+        ], className="mb-4"),
 
                 # Processing form section
                 html.Div(id="processing-form-container", style={"display": "none"}),
@@ -182,11 +182,11 @@ def headlines_ai_layout():
 
             # Right column: Inspection results and final results
             dbc.Col([
-                # Inspection results section
-                html.Div(id="inspection-results-container", style={"display": "none"}),
+        # Inspection results section
+        html.Div(id="inspection-results-container", style={"display": "none"}),
 
-                # Results section
-                html.Div(id="results-container"),
+        # Results section
+        html.Div(id="results-container"),
             ], width=5),
         ]),
     ])
@@ -333,9 +333,9 @@ sidebar = html.Div([
                 html.I(className="fas fa-info-circle"),
                 "About InsightGen"
             ], href="/about", active="exact", className="py-2"),
-        ],
-        vertical=True,
-        pills=True,
+    ],
+    vertical=True,
+    pills=True,
         className="flex-column p-3 flex-grow-1",
     ),
 
